@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Игра</title>
+    <style>
+html, body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: black;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#game {
+  background: rgb(20, 100, 20);
+  position: absolute;
+}
+#info {
+  position: absolute;
+  top:0px;
+  color: #ffffff;
+}
+    </style>
+</head>
+<body>
+
+  <h1 id="info">Проберитесь к выходу, уничтожая блоки, и взорвите дверь</h1>
+
+    <canvas width="750" height="650" id="game"></canvas>
+    
+    <script>
+
+const canvas = document.getElementById('game');
+const context = canvas.getContext('2d');
+const grid = 50;
+const numRows = 13;
+const numCols = 15; 
+
+const softWallCanvas = document.createElement('canvas');
+const softWallCtx = softWallCanvas.getContext('2d');
+softWallCanvas.width = softWallCanvas.height = grid;
+
+// цвет швов между кирпичами
+softWallCtx.fillStyle = 'black';
+softWallCtx.fillRect(0, 0, grid, grid);
+// цвет кирпича
+softWallCtx.fillStyle = '#f58300';
+// первый ряд кирпичей 
+softWallCtx.fillRect(1, 1, 31, 29);
+softWallCtx.fillRect(33, 1, 60, 29);
+// второй ряд кирпичей
+softWallCtx.fillRect(1, 31, 31, 60);
+softWallCtx.fillRect(33, 31, 60, 60);
+
+
+// неразрушаемые блоки
+const wallCanvas = document.createElement('canvas');
+const wallCtx = wallCanvas.getContext('2d');
+
+wallCanvas.width = wallCanvas.height = grid
+
+wallCtx.fillStyle = 'black';
+wallCtx.fillRect(0, 0, grid, grid);
+
+wallCtx.fillStyle = '#a9a9a9';
+wallCtx.fillRect(1, 1, grid-1 , grid-1 );
+
+
+//Дверь
+const DoorCanvas = document.createElement('canvas');
+const DoorCtx = DoorCanvas.getContext('2d');
+
+DoorCtx.fillStyle = 'black';
+DoorCtx.fillRect(0, 0, grid, grid);
+DoorCtx.fillStyle = 'brown';
+
+DoorCtx.fillRect(1, 1, 15, 50);
+DoorCtx.fillRect(18, 1, 15, 50);
+DoorCtx.fillRect(35, 1, 15, 50);
+
+// сопоставляем объекты со значениями на карте
+const types = {
+  wall: '0',
+  softWall: 1,
+  bomb: 2,
+  Door: '3'
+};
+
+// карта игрового поля
+let cells = [];
+const template = [
+  ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'],
+  ['0', 'x', 'x',    ,    ,    , '0',    ,    ,    ,    ,    , 'x', 'x', '0'],
+  ['0', 'x',    , '0',    ,    ,    ,    ,    , '0',    , '0', '0', 'x', '0'],
+  ['0',    , '0', '0',    ,    , '0',    ,    ,    ,    , '0',    , 'x', '0'],
+  ['0',    ,    ,    ,    , '0',    ,    ,    , '0',    ,    ,    ,    , '0'],
+  ['0',    , '0',    , '0',    ,    ,    , '0',    ,    ,    ,    , '0', '0'],
+  ['0', '0',    ,    ,    , '0',    ,    ,    , '0',    , '0',    ,    , '0'],
+  ['0',    ,    ,    ,    , '0',    ,    , '0',    ,    ,    ,    , '0', '0'],
+  ['0',    ,    ,    , '0',    ,    ,    ,    ,    , '0',    ,    ,    , '0'],
+  ['0',    , '0', '0',    ,    , '0',    , '0',    ,    ,    , '0', 'x', '0'],
+  ['0',    ,    , '0',    ,    ,    , '0',    ,    ,    , '0', '0', 'x', '0'],
+  ['0',    ,    ,    ,    ,    ,    ,    ,    , '0',    ,    , 'x', 'x', '0'],
+  ['0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '3', '0']
+];
+let entities = [];
+
+// заполняем уровень 
+function generateLevel() {
+	
+  cells = [];
+
+  // считаем строки
+  for (let row = 0; row < numRows; row++) {
+    cells[row] = [];
+
+    // считаем столбцы
+    for (let col = 0; col < numCols; col++) {
+
+    	// с вероятностью 60% в этой ячейке будет кирпичная стена
+      if (!template[row][col] && Math.random() < 0.60 ) {
+        cells[row][col] = types.softWall;
+      }
+      else if (template[row][col] === types.wall) {
+        cells[row][col] = types.wall;
+      }
+      else if (template[row][col] === types.Door ) {
+        cells[row][col] = types.Door;
+      }
+    }
+  }
+}
+
+// игрок 
+const player = {
+  row: 1,
+  col: 1,
+
+  numBombs: 1,
+
+  bombSize: 2,
+ 
+  radius: grid * 0.35,
+ 
+  render() {
+    const x = (this.col + 0.5) * grid;
+    const y = (this.row + 0.5) * grid;
+
+    context.save();
+    context.fillStyle = 'black';
+    context.beginPath();
+    context.arc(x, y, this.radius, 0, 2 * Math.PI);
+    context.fill();
+    context.beginPath();
+    context.fillStyle = 'white';
+    context.arc(x, y + 5, this.radius , 0,   Math.PI);
+    context.fill();
+    context.beginPath();
+    context.fillStyle = 'black';
+    context.arc(x-10, y + 12, this.radius / 5 , 0, 2 *  Math.PI);
+    context.fillStyle = 'black';
+    context.arc(x+10, y + 12, this.radius / 5 , 0, 2 *  Math.PI);
+    context.fill();
+  }
+}
+
+// бомба
+function Bomb(row, col, size, owner) {
+
+  this.row = row;
+  this.col = col;
+  this.radius = grid * 0.4;
+  this.size = size;
+  this.owner = owner; 
+  this.alive = true;
+  this.type = types.bomb;
+  this.timer = 1000;
+
+  this.update = function(dt) {
+    this.timer -= dt;
+
+    if (this.timer <= 0) {
+      return blowUpBomb(this);
+    }
+
+    // меняем размер бомбы каждые полсекунды
+    const interval = Math.ceil(this.timer / 500);
+    if (interval % 2 === 0) {
+      this.radius = grid * 0.4;
+    }
+    else {
+      this.radius = grid * 0.5;
+    }
+  };
+  this.render = function() {
+    const x = (this.col + 0.5) * grid;
+    const y = (this.row + 0.5) * grid;
+    context.fillStyle = 'black';
+    context.beginPath();
+    context.arc(x, y, this.radius, 0, 2 * Math.PI);
+    context.fill();
+  };
+}
+
+// взрыв
+function Explosion(row, col, dir, center) {
+  this.row = row;
+  this.col = col;
+  this.dir = dir;
+  this.alive = true;
+
+  this.timer = 300;
+
+  this.update = function(dt) {
+    this.timer -= dt;
+
+    if (this.timer <=0) {
+      this.alive = false;
+    }
+  };
+
+  this.render = function() {
+    const x = this.col * grid;
+    const y = this.row * grid;
+    const horizontal = this.dir.col;
+    const vertical = this.dir.row;
+
+    context.fillStyle = '#D72B16'; 
+    context.fillRect(x, y, grid, grid);
+
+    context.fillStyle = '#F39642';
+    if (center || horizontal) {
+      context.fillRect(x, y + 6, grid, grid - 12);
+    }
+    if (center || vertical) {
+      context.fillRect(x + 6, y, grid - 12, grid);
+    }
+
+    context.fillStyle = '#FFE5A8';
+    if (center || horizontal) {
+      context.fillRect(x, y + 12, grid, grid - 24);
+    }
+    if (center || vertical) {
+      context.fillRect(x + 12, y, grid - 24, grid);
+    }
+  };
+}
+
+// взрыв бомбы
+function blowUpBomb(bomb) {
+
+if (!bomb.alive) return;
+
+bomb.alive = false;
+
+cells[bomb.row][bomb.col] = null;
+
+const dirs = [{
+  row: -1,
+  col: 0
+}, {
+  row: 1,
+  col: 0
+}, {
+  row: 0,
+  col: -1
+}, {
+  row: 0,
+  col: 1
+}];
+
+dirs.forEach((dir) => {
+  for (let i = 0; i < bomb.size; i++) {
+    const row = bomb.row + dir.row * i;
+    const col = bomb.col + dir.col * i;
+    const cell = cells[row][col];
+
+    if (cell === types.wall) {    
+      return;
+    }
+    if (cell === types.Door) {
+      alert("Вы выбрались!Перезапустите, что бы сыграть еще раз");
+      return;
+    }
+    
+    entities.push(new Explosion(row, col, dir, i === 0 ? true : false));
+    cells[row][col] = null;
+
+    if (cell) {
+      return;
+    }
+  }
+});
+}
+
+document.addEventListener('keydown', function(e) {
+  let row = player.row;
+  let col = player.col;
+
+  // влево
+  if (e.which === 37) {
+    col--;
+  }
+  // вверх
+  else if (e.which === 38) {
+    row--;
+  }
+  // вправо
+  else if (e.which === 39) {
+    col++;
+  }
+  // вниз
+  else if (e.which === 40) {
+    row++;
+  }
+  // пробел
+  else if (
+    e.which === 32 && !cells[row][col] &&
+    entities.filter((entity) => {
+      return entity.type === types.bomb && entity.owner === player
+    }).length < player.numBombs
+  ) {
+    const bomb = new Bomb(row, col, player.bombSize, player);
+    entities.push(bomb);
+    cells[row][col] = types.bomb;
+  }
+  if (!cells[row][col]) {
+    player.row = row;
+    player.col = col;
+  }
+});
+
+let last;
+let dt;
+function loop(timestamp) {
+  requestAnimationFrame(loop);
+  context.clearRect(0,0,canvas.width,canvas.height);
+
+  if (!last) {
+    last = timestamp;
+  }
+  dt = timestamp - last;
+  last = timestamp;
+ 
+  for (let row = 0; row < numRows; row++) {
+    for (let col = 0; col < numCols; col++) {
+      switch(cells[row][col]) {
+        case types.wall:
+          context.drawImage(wallCanvas, col * grid, row * grid);
+          break;
+        case types.softWall:
+          context.drawImage(softWallCanvas, col * grid, row * grid);
+          break;
+        case types.Door:
+          context.drawImage(DoorCanvas, col * grid, row * grid);
+          break;
+      }
+    }
+  }
+
+  entities.forEach((entity) => {
+    entity.update(dt);
+    entity.render();
+  });
+
+  entities = entities.filter((entity) => entity.alive);
+
+  player.render();
+  monster.render();
+}
+generateLevel();
+requestAnimationFrame(loop);
+draw();
+    </script> 
+</body>
+</html>
